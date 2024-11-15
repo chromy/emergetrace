@@ -8,6 +8,7 @@ import glob
 
 RED = "\033[31m"
 ENDC = "\033[m"
+BLUE = "\033[0;34m"
 
 def eprint(*args, **kwargs):
   is_term = sys.stderr.isatty()
@@ -16,6 +17,16 @@ def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
   if is_term:
     print(ENDC, end="", file=sys.stderr)
+  sys.stderr.flush()
+
+def iprint(*args, **kwargs):
+  is_term = sys.stderr.isatty()
+  if is_term:
+    print(BLUE, end="", file=sys.stderr)
+  print(*args, file=sys.stderr, **kwargs)
+  if is_term:
+    print(ENDC, end="", file=sys.stderr)
+  sys.stderr.flush()
 
 def fatal(*args, **kwargs):
   eprint(*args, **kwargs)
@@ -24,9 +35,21 @@ def fatal(*args, **kwargs):
 try:
   import perfetto
   from perfetto.batch_trace_processor.api import BatchTraceProcessor
+  from perfetto.trace_uri_resolver.resolver import TraceUriResolver
   import requests
 except ModuleNotFoundError:
   fatal("Unable to import additional dependencies (perfetto, requests) ensure these are installed globally or the virtual env is activated. See README.md for details.")
+
+
+class TraceResolver(TraceUriResolver):
+  def __init__(self, paths):
+    self.paths = paths
+
+  def resolve(self):
+    results = []
+    for path in self.paths:
+      results.append(TraceUriResolver.Result(trace=path, metadata={'path': path}))
+    return results
 
 
 def download_trace(ctx, span_id, iteration, out):
@@ -44,33 +67,46 @@ def download_trace(ctx, span_id, iteration, out):
 
 def do_download(ctx):
   span_id = ctx.args.span_id
-  out_directory = ctx.get_out_directory()
+  trace_directory = ctx.get_trace_directory()
+  # TODO: fix
   for i in range(93):
     if i < 3:
       continue
-    out_path = os.path.join(out_directory, f"trace_{i}.pftrace")
-    if os.path.exists(out_path):
-      print(f"Skipping downloading {i} as {out_path}, already exists.")
+    trace_path = os.path.join(trace_directory, f"trace_{i}.pftrace")
+    if os.path.exists(trace_path):
+      print(f"Skipping downloading {i} as {trace_path}, already exists.")
       continue
-    download_trace(ctx, span_id, i, out_path)
+    download_trace(ctx, span_id, i, trace_path)
 
 
 def do_batch(ctx):
   sql = ctx.get_query()
 
-  out_directory = ctx.get_out_directory()
-  files = os.listdir(out_directory)
-  paths = [os.path.join(out_directory, name) for name in files if os.path.isfile(name)]
+  trace_directory = ctx.get_trace_directory()
+  files = os.listdir(trace_directory)
+  all_paths = [os.path.join(trace_directory, name) for name in files]
+  paths = [path for path in all_paths if os.path.isfile(path)]
 
-  if not paths:
-    eprint(f"No available traces in {out_directory}.")
+  if paths:
+    iprint(f"Running query on {len(paths)} of {len(all_paths)} available traces.")
+  else:
+    iprint(f"No available traces in {trace_directory}.")
     return 1
 
-  with BatchTraceProcessor(paths) as btp:
-    df = btp.query_and_flatten(sql)
-    print(df)
-    df.to_csv('data.csv', index=True)
+  resolver = TraceResolver(paths)
 
+  out = ctx.get_out()
+  with BatchTraceProcessor(resolver) as btp:
+    df = btp.query_and_flatten(sql)
+
+    if ctx.args.csv:
+      df.to_csv(out)
+    elif ctx.args.json:
+      df.to_json(out, orient="records")
+    elif ctx.args.tsv:
+      df.to_csv(out, sep="\t")
+    else:
+      df.to_csv(out, sep="\t")
 
 class Context(object):
   def __init__(self, args):
@@ -93,11 +129,18 @@ class Context(object):
     else:
       return None
 
-  def get_out_directory(self):
+  def get_trace_directory(self):
     directory = self.args.traces
     if not os.path.exists(directory):
       os.makedirs(directory)
     return directory
+
+  def get_out(self):
+    path = self.args.out
+    if path == "-":
+      return sys.stdout
+    else:
+      return open(path, "w")
 
 
 def main():
@@ -108,6 +151,7 @@ def main():
 
   api_token_default = os.environ["EMERGE_API_TOKEN"]
   traces_default = os.path.abspath(os.path.join(os.path.expanduser("~"), "traces"))
+  out_default = "-"
 
   parser.add_argument('--api-token', help=f"Set the API token. Defaults to env[EMERGE_API_TOKEN]. See https://docs.emergetools.com/docs/uploading-basics#obtain-an-api-key. (default: '{api_token_default}')", default=api_token_default)
   parser.add_argument('--traces', help=f"Directory for downloaded traces. (default: '{traces_default}')", default=traces_default)
@@ -121,6 +165,10 @@ def main():
   batch_cmd = subparsers.add_parser("batch", help="")
   #batch_cmd.add_argument("regex", help="Regex for ")
   batch_cmd.add_argument("-q", "--query-file", help="path to a text file containing a SQL query to run")
+  batch_cmd.add_argument("--csv", action='store_true', help="output query results as CSV")
+  batch_cmd.add_argument("--tsv", action='store_true', help="output query results as TSV")
+  batch_cmd.add_argument("--json", action='store_true', help="output results as Json")
+  batch_cmd.add_argument("--out", help="output path (default: '{out_default}')", default=out_default)
   batch_cmd.add_argument("SQL", nargs="*", help="SQL query to run")
   batch_cmd.set_defaults(func=do_batch)
 
