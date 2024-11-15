@@ -108,7 +108,8 @@ def do_download(ctx):
         continue
 
       if os.path.exists(trace_path):
-        iprint(f"Skipping downloading {i} as {trace_path}, already exists.")
+        iprint(f"Skipping downloading iteration {i} {trace_path} already exists.")
+        continue
 
       ctx.i(f"Downloading {span_id} ({name}) sample {i}")
       download_trace(ctx, span_id, i, trace_path)
