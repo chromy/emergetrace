@@ -24,18 +24,40 @@ to get an API key.
 export EMERGE_API_TOKEN=[Your API token]
 ```
 
-## Download a batch of traces
+## Show information about an upload
 ```
-./emergetrace download span_12345
+./emergetrace analysis 30d3ef42-a9c0-429a-acdb-1236f099dba8
+```
+
+## Download a batch of traces
+
+All traces for a given upload:
+```
+./emergetrace download 30d3ef42-a9c0-429a-acdb-1236f099dba8
+```
+
+Only the traces for span 'span_1234' for an upload:
+```
+./emergetrace download 30d3ef42-a9c0-429a-acdb-1236f099dba8 --span-id span_1234
+```
+
+Only the traces for samples 42 and 45 for span 'span_1234' for an upload:
+```
+./emergetrace download 30d3ef42-a9c0-429a-acdb-1236f099dba8 --span-id span_1234 -s 42 45
 ```
 
 ## Run a SQL query across all traces
 ```
-./emergetrace batch span_12345 "INCLUDE PERFETTO MODULE slices.with_context; with target as (select utid, name, ts, dur from thread_slice where name like 'SomeSliceName%')
-         select state, sum(thread_state.dur) from thread_state join target where thread_state.utid = target.utid and target.ts <= thread_state.ts and thread_state.ts + thread_state.dur <= target.ts + target.dur group by state;"
+./emergetrace batch 'select count(*) from slice;'
 ```
 
-  # python3 emergetrace.py batch span_bamh5XrbgTsh "INCLUDE PERFETTO MODULE slices.with_context; with target as (select utid, name, ts, dur from thread_slice where name like 'file_read%summary.json')
-  # select state, sum(thread_state.dur) from thread_state join target where thread_state.utid = target.utid and target.ts <= thread_state.ts and thread_state.ts + thread_state.dur <= target.ts + target.dur group by state;"
+Output the results to a .csv
+```
+./emergetrace batch --csv --out data.csv 'select count(*) from slice;'
+```
 
+Output the results as .json reading the query from a file:
+```
+./emergetrace batch --json -q bindApplication_by_thread_state.sql
+```
 
