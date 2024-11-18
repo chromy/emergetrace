@@ -2,6 +2,8 @@
 
 Batch analysis for traces from Emergetools performance runs.
 
+[![asciicast](https://asciinema.org/a/S8Eh9v8iUlgFvATg4ahWg9pjE.svg)](https://asciinema.org/a/S8Eh9v8iUlgFvATg4ahWg9pjE)
+
 ## Onetime setup
 
 Cone the repo:
